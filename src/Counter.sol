@@ -384,7 +384,9 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
 
             if (totalAllocation != TOTAL_PERCENTAGE) {
                 revert("Allocation total must equal 100%");
+                //put custom error
             }
+            // 3. Add new one
         } else {
             AssetConfig storage newConfig = assetConfig[_newToken];
             //After doing the op assig new
@@ -396,9 +398,67 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
                 _newAllocationBps;
             config.allocationBps = newAllocationBps_toReplace;
         }
+        assetConfig[_newToken] += AssetConfig({
+            allocationBps: _newAllocationBps,
+            stopLossBps: 0, // 9500
+            takeProfitBps: 0, // 11000
+            riskEnabled: false,
+            riskPaused: false
+        });
     }
 
-    function removeAsset(address token) external onlyOwner;
+    function removeAsset(address _removedToken) external {
+        uint256 removedBps = assetConfig[_removedToken].allocationBps;
+        //require(removedBps > 0, "Token not active or already 0%");
+
+        // 1. Eliminar el token del mapping
+        delete assetConfig[_removedToken];
+
+        // 2. Remover el token del array 'assets' (swap & pop)
+        uint256 length = assets.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (assets[i] == _removedToken) {
+                assets[i] = assets[length - 1];
+                assets.pop();
+                break;
+            }
+        }
+
+        uint256 newLength = assets.length;
+
+        // Si no quedan tokens, terminamos
+        if (newLength == 0) return;
+
+        // 3. La suma BPS que representaban los activos restantes antes del reajuste
+        uint256 remainingAssetsOldSumBps = TOTAL_PERCENTAGE - removedBps; // Ej: 10_000 - 3_000 = 7_000
+
+        uint256 sumAdjustedOldAssets = 0;
+
+        // 4. Reescalar hacia arriba los porcentajes de los activos restantes
+        for (uint256 index = 0; index < newLength; index++) {
+            AssetConfig storage config = assetConfig[assets[index]];
+
+            if (index == newLength - 1) {
+                // Último elemento: Absorbe residuos por redondeo (dust)
+                uint256 lastPercentage = TOTAL_PERCENTAGE -
+                    sumAdjustedOldAssets;
+                config.allocationBps = lastPercentage;
+                sumAdjustedOldAssets += lastPercentage;
+            } else {
+                // Fórmula de escalado hacia arriba: (BPS_actual * 10_000) / Suma_Viejos_Restantes
+                uint256 itemNewAllocationBps = (config.allocationBps *
+                    TOTAL_PERCENTAGE) / remainingAssetsOldSumBps;
+                config.allocationBps = itemNewAllocationBps;
+                sumAdjustedOldAssets += itemNewAllocationBps;
+            }
+        }
+
+        // 5. Validación final de integridad
+        if (sumAdjustedOldAssets != TOTAL_PERCENTAGE) {
+            revert("Allocation total must equal 100%");
+        }
+    }
+
     function updateAllocation(
         address token,
         uint256 newAllocationBps
