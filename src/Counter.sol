@@ -304,6 +304,7 @@ STOCK PORTFOLIO VAULT
 // private
 // view & pure functions
 pragma solidity ^0.8.25;
+import "../lib/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import {console} from "forge-std/console.sol";
 import {
     IERC20,
@@ -316,6 +317,10 @@ import {
 contract TradeWallet is AccessControl, ReentrancyGuard {
     mapping(address => AssetConfig) public assetConfig;
     mapping(address => Position) public assetPosition;
+
+    uint256 private recerva;
+    
+    //funcion para cambiarla reserva; 
     address[] public assets;
     struct AssetConfig {
         uint16 allocationBps;
@@ -476,11 +481,35 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
         uint256 takeProfitBps
     ) external onlyOwner;
     function invest(
-        uint256 usdcAmount,
-        SwapData[] calldata swaps
-    ) external onlyBot;
-    //SHOULD WE SET  USDC ADDRESS
+        address usdc,
+        bytes[] calldata path
+    ) external onlyBot{
+        //aprove usdc
+        //add path
+        uint256 tokenBalance = IERC20.balanceof(address(this));
+        uint256 amount_to_invest = tokenBalance * reserva / TOTAL_PERCENTAGE;
+        IERC20(usdc).approve(router, amount_to_invest);
+        uint256 length = assets.length;
+            for (uint256 index = 0; index < length; index++) {
+                AssetConfig memory config = assetConfig[assets[index]];
+                uint256 amountIn = amount_to_invest * config.allocationBps /  TOTAL_PERCENTAGE;
+                uint256 amountOut = swapRouter.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: usdc,
+                tokenOut: assets[index],
+                fee: fee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMinimum,
+                sqrtPriceLimitX96: 0
+            })
+        );
+            
+    };
+    //SHOULD WE SET  USDC ADDRESS ?
     constructor(bytes32 _commitmet, address _secondAddress) {
+                s_swapRouter = ISwapRouter(_swapRouter);
         s_commitment = _commitmet;
         s_secondAddress = _secondAddress;
         _grantRole(SECONDARY_ACCOUNT, msg.sender);
