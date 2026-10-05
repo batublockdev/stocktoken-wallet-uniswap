@@ -303,35 +303,53 @@ STOCK PORTFOLIO VAULT
 // internal
 // private
 // view & pure functions
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.20;
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "../lib/solidity-bytes-utils/contracts/BytesLib.sol";
 import {console} from "forge-std/console.sol";
 import {
     IERC20,
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+
 import {
     ReentrancyGuard
 } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-contract TradeWallet is AccessControl, ReentrancyGuard {
+import {
+    IUniswapV3Factory
+} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import {UniswapV3Twap} from "./libraries/UniswapV3Twap.sol";
+contract StockWallet is AccessControl, ReentrancyGuard {
+    error StockWallet_PercentagesExceedTotal();
     mapping(address => AssetConfig) public assetConfig;
     mapping(address => Position) public assetPosition;
+    mapping(address => bytes path) public assetPath;
+    IUniswapV3Factory public immutable factory;
+    address public usdc;
+    uint24 public constant POOL_FEE = 500;
     ISwapRouter public immutable s_swapRouter;
-    uint256 private gas_fee;
-
+    // seteamos de cero pero hay que hacerlo dinamica
+    uint256 private gas_fee = 200;
+    using SafeERC20 for IERC20;
+    using BytesLib for bytes;
     //funcion para cambiarla reserva;
     address[] public assets;
     struct AssetConfig {
-        uint16 allocationBps;
+        uint256 allocationBps;
         uint16 stopLossBps; // 9500
         uint16 takeProfitBps; // 11000
         bool riskEnabled;
         bool riskPaused;
+        bool ownBot;
     }
     struct Position {
         uint256 amount;
-        uint256 invested;
+        uint256 invested; // in usdc
+    }
+    struct tokenAllocationConfig {
+        address token;
+        AssetConfig configs;
     }
     bytes32 public constant SECONDARY_ACCOUNT = keccak256("SECONDARY_ACCOUNT");
     // Escala de porcentaje (10_000 = 100%, 1 = 1%)
@@ -360,32 +378,67 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
     //we reduce one of the stocks or all of them
     function addAsset(
         address _newToken,
-        uint16 _newAllocationBps,
+        uint256 _newAllocationBps,
         address _oldToken
     ) external {
         //_newAllocationBps must be in term of 10_000 = 100%
+        console.log("=== addAsset START ===");
+        console.log("_newToken:", _newToken);
+        console.log("_newAllocationBps:", _newAllocationBps);
+        console.log("_oldToken:", _oldToken);
         if (_oldToken == address(0)) {
-            uint16 remainingPercentage = TOTAL_PERCENTAGE - _newAllocationBps; // Ej: 100% - 20% = 80% --> 10_000 - 2_000 = 8_000
-            uint16 sumAdjustedOldAssets = 0;
+            console.log("Branch: _oldToken == address(0)");
+            uint256 remainingPercentage = TOTAL_PERCENTAGE - _newAllocationBps; // Ej: 100% - 20% = 80% --> 10_000 - 2_000 = 8_000
+            console.log("remainingPercentage:", remainingPercentage);
+            uint256 sumAdjustedOldAssets = 0;
             uint256 length = assets.length;
+            console.log("assets.length:", length);
             // (3,000 * 8,000) / 10,000 = 2,400
-            for (uint16 index = 0; index < length; index++) {
+            for (uint256 index = 0; index < length; index++) {
                 AssetConfig storage config = assetConfig[assets[index]];
+                console.log("  index:", index);
+                console.log("  token:", assets[index]);
+                console.log(
+                    "  config.allocationBps (before):",
+                    config.allocationBps
+                );
                 if (index == length - 1) {
-                    uint16 lastPercentage = remainingPercentage -
+                    console.log("  is last element");
+                    console.log("  remainingPercentage:", remainingPercentage);
+                    console.log(
+                        "  sumAdjustedOldAssets:",
+                        sumAdjustedOldAssets
+                    );
+                    uint256 lastPercentage = remainingPercentage -
                         sumAdjustedOldAssets;
+                    console.log("  lastPercentage:", lastPercentage);
                     config.allocationBps = lastPercentage;
                     sumAdjustedOldAssets += lastPercentage;
+                    console.log(
+                        "  sumAdjustedOldAssets (after last):",
+                        sumAdjustedOldAssets
+                    );
                 } else {
                     //After doing the op assig new
-                    uint16 itemNewAllocationBps = (config.allocationBps *
+                    uint256 itemNewAllocationBps = (config.allocationBps *
                         remainingPercentage) / TOTAL_PERCENTAGE; // Ej:  (3,000 * 8,000) / 10,000 = 2,400 --> 24%
+                    console.log(
+                        "  itemNewAllocationBps:",
+                        itemNewAllocationBps
+                    );
                     config.allocationBps = itemNewAllocationBps;
                     sumAdjustedOldAssets += itemNewAllocationBps;
+                    console.log(
+                        "  sumAdjustedOldAssets (after):",
+                        sumAdjustedOldAssets
+                    );
                 }
             }
             //if total is not = to 100% we revert
-            uint16 totalAllocation = sumAdjustedOldAssets + _newAllocationBps;
+            uint256 totalAllocation = sumAdjustedOldAssets + _newAllocationBps;
+            console.log("totalAllocation:", totalAllocation);
+            console.log("_newAllocationBps:", _newAllocationBps);
+            console.log("sumAdjustedOldAssets:", sumAdjustedOldAssets);
 
             if (totalAllocation != TOTAL_PERCENTAGE) {
                 revert("Allocation total must equal 100%");
@@ -393,27 +446,37 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
             }
             // 3. Add new one
         } else {
+            console.log("Branch: _oldToken != address(0)");
             AssetConfig storage newConfig = assetConfig[_newToken];
             //After doing the op assig new
             newConfig.allocationBps = _newAllocationBps;
             AssetConfig storage oldConfig = assetConfig[_oldToken];
+            console.log("oldConfig.allocationBps:", oldConfig.allocationBps);
+            console.log("_newAllocationBps:", _newAllocationBps);
             //After doing the op assig new
             //chek if the new is lower
-            uint16 newAllocationBps_toReplace = oldConfig.allocationBps -
+            uint256 newAllocationBps_toReplace = oldConfig.allocationBps -
                 _newAllocationBps;
+            console.log(
+                "newAllocationBps_toReplace:",
+                newAllocationBps_toReplace
+            );
             oldConfig.allocationBps = newAllocationBps_toReplace;
         }
+        console.log("=== addAsset END ===");
         assetConfig[_newToken] = AssetConfig({
             allocationBps: _newAllocationBps,
             stopLossBps: 0, // 9500
             takeProfitBps: 0, // 11000
             riskEnabled: false,
-            riskPaused: false
+            riskPaused: false,
+            ownBot: false
         });
+        assets.push(_newToken);
     }
 
     function removeAsset(address _removedToken) external {
-        uint16 removedBps = assetConfig[_removedToken].allocationBps;
+        uint256 removedBps = assetConfig[_removedToken].allocationBps;
         //require(removedBps > 0, "Token not active or already 0%");
 
         // 1. Eliminar el token del mapping
@@ -435,9 +498,9 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
         if (newLength == 0) return;
 
         // 3. La suma BPS que representaban los activos restantes antes del reajuste
-        uint16 remainingAssetsOldSumBps = TOTAL_PERCENTAGE - removedBps; // Ej: 10_000 - 3_000 = 7_000
+        uint256 remainingAssetsOldSumBps = TOTAL_PERCENTAGE - removedBps; // Ej: 10_000 - 3_000 = 7_000
 
-        uint16 sumAdjustedOldAssets = 0;
+        uint256 sumAdjustedOldAssets = 0;
 
         // 4. Reescalar hacia arriba los porcentajes de los activos restantes
         for (uint256 index = 0; index < newLength; index++) {
@@ -445,12 +508,13 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
 
             if (index == newLength - 1) {
                 // Último elemento: Absorbe residuos por redondeo (dust)
-                uint16 lastPercentage = TOTAL_PERCENTAGE - sumAdjustedOldAssets;
+                uint256 lastPercentage = TOTAL_PERCENTAGE -
+                    sumAdjustedOldAssets;
                 config.allocationBps = lastPercentage;
                 sumAdjustedOldAssets += lastPercentage;
             } else {
                 // Fórmula de escalado hacia arriba: (BPS_actual * 10_000) / Suma_Viejos_Restantes
-                uint16 itemNewAllocationBps = (config.allocationBps *
+                uint256 itemNewAllocationBps = (config.allocationBps *
                     TOTAL_PERCENTAGE) / remainingAssetsOldSumBps;
                 config.allocationBps = itemNewAllocationBps;
                 sumAdjustedOldAssets += itemNewAllocationBps;
@@ -479,41 +543,210 @@ contract TradeWallet is AccessControl, ReentrancyGuard {
         uint256 stopLossSellBps,
         uint256 takeProfitBps
     ) external onlyOwner;*/
-    function invest(address usdc, bytes[] calldata path) external {
+    //
+    function selltoken(address token, bytes calldata path) public {
+        console.log("=== selltoken START ===");
+        console.log("token:", token);
+        console.log("path.length:", path.length);
+        //chek path
+        if (path.length > 0) {
+            address TokentoReceive = getLastAddress(path);
+            console.log("TokentoReceive:", TokentoReceive);
+            console.log("usdc:", usdc);
+            if (TokentoReceive != usdc) {
+                console.log("REVERT: path does not end in usdc");
+                revert();
+            }
+        }
+        //check price
+
+        uint256 tokenBalance = IERC20(token).balanceOf(address(this));
+        console.log("tokenBalance:", tokenBalance);
+        uint256 tokenPriceUsdcNow = getTwapPrice(
+            token,
+            usdc,
+            uint128(tokenBalance)
+        );
+        console.log("tokenPriceUsdcNow:", tokenPriceUsdcNow);
+        //chek if the stoppfit or the startprofit meet with the price
+        Position storage position = assetPosition[token];
+        AssetConfig memory config = assetConfig[token];
+        console.log("position.invested:", position.invested);
+        console.log("config.stopLossBps:", config.stopLossBps);
+        console.log("config.takeProfitBps:", config.takeProfitBps);
+        //get the price stop which is the maximun price to sell
+        uint256 minimunToLose = (position.invested * config.stopLossBps) /
+            TOTAL_PERCENTAGE;
+        uint256 minimunTowin = (position.invested * config.takeProfitBps) /
+            TOTAL_PERCENTAGE;
+        console.log("minimunToLose:", minimunToLose);
+        console.log("minimunTowin:", minimunTowin);
+        if (tokenPriceUsdcNow <= minimunToLose) {
+            console.log("BRANCH: stopLoss triggered (price <= minimunToLose)");
+            IERC20(token).approve(address(s_swapRouter), tokenBalance);
+            console.log("approved swapRouter for tokenBalance");
+            uint256 amountOut = _swap(token, usdc, path, tokenBalance);
+            console.log("swap amountOut:", amountOut);
+
+            //ban token so can not be investe no more
+            console.log("=== selltoken END (stopLoss) ===");
+            return;
+        }
+        if (tokenPriceUsdcNow >= minimunTowin) {
+            console.log("BRANCH: takeProfit triggered (price >= minimunTowin)");
+            //we get the price invested in the token with the current price then substract and sell de diference
+            uint256 usdcToToken = getTwapPrice(
+                usdc,
+                token,
+                uint128(position.invested)
+            );
+            console.log("usdcToToken:", usdcToToken);
+            uint256 diference = tokenBalance - usdcToToken;
+            console.log("diference:", diference);
+            IERC20(token).approve(address(s_swapRouter), diference);
+            console.log("approved swapRouter for diference");
+            uint256 amountOut = _swap(token, usdc, path, diference);
+            console.log("swap amountOut:", amountOut);
+            console.log("=== selltoken END (takeProfit) ===");
+            return;
+        } else {
+            console.log(
+                "REVERT: price between stopLoss and takeProfit, no action"
+            );
+            revert();
+        }
+        // if now price is lower or equal to maximun to lose we can sell
+        /// faltan los effects
+        //sell --- > swap
+    } /*
+    function selltokenAll() {
+        //check price
+        //chek if the stoppfit or the startprofit meet with the price
+        //sell --- > swap
+    }*/
+
+    //send some money to the adgent and to the paymaste to pay the gas fee
+    function invest(bytes[] calldata path) external {
         //aprove usdc
         //add path
+
         uint256 tokenBalance = IERC20(usdc).balanceOf(address(this));
-        uint256 amount_to_invest = (tokenBalance * gas_fee) / TOTAL_PERCENTAGE;
+        uint256 amount_to_invest = (tokenBalance *
+            (TOTAL_PERCENTAGE - gas_fee)) / TOTAL_PERCENTAGE;
         IERC20(usdc).approve(address(s_swapRouter), amount_to_invest);
         uint256 length = assets.length;
+        if (path.length > 0) {
+            for (uint256 index = 0; index < path.length; index++) {
+                address TokentoReceive = getLastAddress(path[index]);
+                assetPath[TokentoReceive] = path[index];
+            }
+        }
+
         for (uint256 index = 0; index < length; index++) {
-            AssetConfig memory config = assetConfig[assets[index]];
+            address addrTokenOut = assets[index];
+            Position storage positionToken = assetPosition[addrTokenOut];
+            bytes memory tokenPath = assetPath[addrTokenOut];
+            AssetConfig memory config = assetConfig[addrTokenOut];
             uint256 amountIn = (amount_to_invest * config.allocationBps) /
                 TOTAL_PERCENTAGE;
+            uint256 amountOut = _swap(usdc, addrTokenOut, tokenPath, amountIn);
+            delete assetPath[addrTokenOut];
+            positionToken.amount = amountOut;
+            positionToken.invested = amountIn;
+        }
+    }
+
+    //SHOULD WE SET  USDC ADDRESS ?
+    constructor(
+        bytes32 _commitmet,
+        address _secondAddress,
+        address _swapRouter,
+        address _usdc,
+        address _factory,
+        tokenAllocationConfig[] memory tokenToInvest
+    ) {
+        uint256 TotalPercentage;
+        for (uint256 index = 0; index < tokenToInvest.length; index++) {
+            address addrToken = tokenToInvest[index].token;
+            AssetConfig memory newConfig = tokenToInvest[index].configs;
+            assetConfig[addrToken] = newConfig;
+            TotalPercentage += newConfig.allocationBps;
+            if (
+                newConfig.stopLossBps != 0 &&
+                newConfig.takeProfitBps < TOTAL_PERCENTAGE
+            ) {
+                revert();
+            }
+            if (
+                newConfig.stopLossBps != 0 &&
+                newConfig.stopLossBps > TOTAL_PERCENTAGE
+            ) {
+                revert();
+            }
+            assets.push(addrToken);
+        }
+        if (TOTAL_PERCENTAGE != TotalPercentage) {
+            revert StockWallet_PercentagesExceedTotal();
+        }
+
+        s_swapRouter = ISwapRouter(_swapRouter);
+        factory = IUniswapV3Factory(_factory);
+        s_commitment = _commitmet;
+        s_secondAddress = _secondAddress;
+        _grantRole(SECONDARY_ACCOUNT, msg.sender);
+        usdc = _usdc;
+    }
+    function _swap(
+        address tokenIn,
+        address tokenOut,
+        bytes memory path,
+        uint256 amountIn
+    ) internal returns (uint256) {
+        if (path.length == 0) {
             uint256 amountOut = s_swapRouter.exactInputSingle(
                 ISwapRouter.ExactInputSingleParams({
-                    tokenIn: usdc,
-                    tokenOut: assets[index],
-                    fee: 2000,
+                    tokenIn: tokenIn,
+                    tokenOut: tokenOut,
+                    fee: POOL_FEE,
                     recipient: address(this),
-                    deadline: block.timestamp,
+                    deadline: block.timestamp + 15,
                     amountIn: amountIn,
                     amountOutMinimum: 1,
                     sqrtPriceLimitX96: 0
                 })
             );
+            return amountOut;
+        } else {
+            uint256 amountOut = s_swapRouter.exactInput(
+                ISwapRouter.ExactInputParams({
+                    path: path,
+                    recipient: address(this),
+                    deadline: block.timestamp + 15,
+                    amountIn: amountIn,
+                    amountOutMinimum: 1
+                })
+            );
+            return amountOut;
         }
     }
-    //SHOULD WE SET  USDC ADDRESS ?
-    constructor(
-        bytes32 _commitmet,
-        address _secondAddress,
-        address _swapRouter
-    ) {
-        s_swapRouter = ISwapRouter(_swapRouter);
-        s_commitment = _commitmet;
-        s_secondAddress = _secondAddress;
-        _grantRole(SECONDARY_ACCOUNT, msg.sender);
+    function getLastAddress(bytes memory path) public pure returns (address) {
+        require(path.length >= 20, "Path invalido");
+
+        // Lee exactamente 20 bytes iniciando en la posición (longitud total - 20)
+        return path.toAddress(path.length - 20);
+    }
+    function getTwapPrice(
+        address tokenin,
+        address tokenout,
+        uint128 amount
+    ) public view returns (uint256) {
+        address pool = factory.getPool(tokenin, tokenout, POOL_FEE);
+        return UniswapV3Twap.getTwapAmountOut(pool, tokenin, amount, 1800);
+    }
+    //just for test
+    function modifyPosition(uint256 amount, address token) public {
+        Position storage positionToken = assetPosition[token];
+        positionToken.invested = amount;
     }
 
     /*function getAllocation(address token) external view returns (uint256);
