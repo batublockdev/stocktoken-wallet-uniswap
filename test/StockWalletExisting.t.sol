@@ -1,6 +1,6 @@
 //SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import {Test, console, stdMath} from "../lib/forge-std/src/Test.sol";
 import {StockWallet} from "../src/StockWallet.sol";
@@ -14,7 +14,9 @@ import {
     PLAST,
     WBRL,
     UNISWAP_V3_FACTORY,
-    UNISWAP_V3_QUOTER
+    UNISWAP_V3_QUOTER,
+    UNIVERSAL_ROUTER,
+    PERMIT2
 } from "./ConstantsCelo.sol";
 
 contract StockWalletTest is Test {
@@ -30,7 +32,10 @@ contract StockWalletTest is Test {
     IERC20 private plast = IERC20(PLAST);
     IERC20 private wbrl = IERC20(WBRL);
 
-    function setUp() public {}
+    function setUp() public {
+        // Fork de Celo mainnet para que los contratos reales (USDT, WBTC, etc.) existan
+        vm.createSelectFork("https://forno.celo.org");
+    }
 
     function test_constructor_checks() public {
         StockWallet.AssetConfig memory configx1 = StockWallet.AssetConfig({
@@ -59,7 +64,12 @@ contract StockWalletTest is Test {
         wallet = new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             address(adgent),
             address(adgentContract),
             2000,
@@ -89,7 +99,7 @@ contract StockWalletTest is Test {
 
         bytes[] memory path = new bytes[](0);
         vm.prank(adgent);
-        wallet.invest(path);
+        wallet.invest(path, new StockWallet.V4PoolData[][](0));
 
         uint256 usdcAdgentContractBalanceAfter = usdt.balanceOf(
             address(adgentContract)
@@ -109,10 +119,8 @@ contract StockWalletTest is Test {
         console.log("WBTC After: ", wbtcBalanceAfter);
         console.log("WETH After:  ", wethBalanceAfter);
 
-        deal(WBRL, address(this), 5046 * 1e18);
-        bytes memory pathsWBRL;
-        wbrl.approve(address(wallet), 5046 * 1e18);
-        wallet.depositAsset(WBRL, 5046 * 1e18, pathsWBRL);
+        deal(USDT, address(this), 10 * 1e6);
+        usdt.transfer(address(wallet), 10 * 1e6);
 
         StockWallet.AssetConfig memory XAUt0config = StockWallet.AssetConfig({
             allocationBps: 2000,
@@ -148,7 +156,7 @@ contract StockWalletTest is Test {
 
         bytes[] memory paths = new bytes[](0);
         vm.prank(adgent);
-        wallet.invest(paths);
+        wallet.invest(paths, new StockWallet.V4PoolData[][](0));
 
         uint256 wbrlBalanceFinal = wbrl.balanceOf(address(wallet));
         uint256 usdtBalanceFinal = usdt.balanceOf(address(wallet));
@@ -208,7 +216,12 @@ contract StockWalletTest is Test {
         wallet = new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             address(adgent),
             address(adgentContract),
             2000,
@@ -229,7 +242,7 @@ contract StockWalletTest is Test {
 
         bytes[] memory instructions = new bytes[](0);
         vm.prank(adgent);
-        wallet.invest(instructions);
+        wallet.invest(instructions, new StockWallet.V4PoolData[][](0));
 
         uint256 usdtAfter = usdt.balanceOf(address(wallet));
         uint256 wbtcAfter = wbtc.balanceOf(address(wallet));
@@ -249,7 +262,7 @@ contract StockWalletTest is Test {
         vm.prank(adgent);
         // selltoken requires ADGENT_ROLE, and we need SL/TP to trigger
         // Skip for now as modifyPosition is no longer available
-        // wallet.selltoken(XAUt0, path);
+        // wallet.selltoken(XAUt0, path, new StockWallet.V4PoolData[](0));
 
         uint256 xaut0AfterSell = xaut0.balanceOf(address(wallet));
         uint256 usdtAfterSell = usdt.balanceOf(address(wallet));

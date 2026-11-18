@@ -1,0 +1,439 @@
+//SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.24;
+
+import {Test, console, stdMath} from "../lib/forge-std/src/Test.sol";
+import {StockWallet} from "../src/StockWallet.sol";
+import {IERC20} from "./IERC20.sol";
+import {console} from "forge-std/console.sol";
+import {
+    BTCB,
+    ETH,
+    USDT,
+    USDC,
+    TSLAon,
+    USDY,
+    NVDAon,
+    UNISWAP_V3_FACTORY,
+    UNISWAP_V3_QUOTER,
+    UNIVERSAL_ROUTER,
+    PERMIT2
+} from "./ConstantsBnb.sol";
+
+/// @title StockWalletExistingBnb — Versión BNB Chain del test de ciclo completo
+/// @notice Deploy → invest → addAsset → invest de nuevo → selltokenAll → withdraw
+///         Usa contratos reales de BSC mainnet (requiere fork)
+/// @dev AAPLon no existe en BSC mainnet — se usa NVDAon en su lugar
+contract StockWalletExistingBnbTest is Test {
+    StockWallet public wallet;
+    address public owner = makeAddr("owner");
+    address public adgent = makeAddr("adgent");
+    address public adgentContract = makeAddr("adgentContract");
+
+    // Tokens reales de BNB Chain
+    IERC20 private usdt = IERC20(USDT);
+    IERC20 private btcb = IERC20(BTCB);
+    IERC20 private eth = IERC20(ETH);
+    IERC20 private usdy = IERC20(USDY);
+    IERC20 private tsla = IERC20(TSLAon);
+    IERC20 private nvda = IERC20(NVDAon);
+
+    function setUp() public {
+        // Fork BNB Chain mainnet — bloque reciente donde USDY, TSLA, NVDA existen
+        vm.createFork(
+            "https://bnb-mainnet.g.alchemy.com/v2/alch_3YuxgQWBEEmRG1qX352X6"
+        );
+        vm.rollFork(106000000);
+    }
+
+    // =============================================================
+    // === TEST 1: Ciclo completo con BTCB + ETH, luego addAsset USDY ===
+    // =============================================================
+
+    /// @notice Deploy con BTCB+ETH, investir, agregar USDY, investir de nuevo, selltokenAll, withdraw
+    function test_fullCycle_btc_eth_usdy() public {
+        // --- DEPLOY ---
+        StockWallet.AssetConfig memory configBtcb = StockWallet.AssetConfig({
+            allocationBps: 5000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+        StockWallet.AssetConfig memory configEth = StockWallet.AssetConfig({
+            allocationBps: 5000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+
+        StockWallet.TokenAllocationConfig[]
+            memory tokenAllocation = new StockWallet.TokenAllocationConfig[](2);
+        tokenAllocation[0] = StockWallet.TokenAllocationConfig({
+            token: BTCB,
+            configs: configBtcb
+        });
+        tokenAllocation[1] = StockWallet.TokenAllocationConfig({
+            token: ETH,
+            configs: configEth
+        });
+
+        vm.prank(owner);
+        wallet = new StockWallet(
+            USDT,
+            UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
+            UNISWAP_V3_QUOTER,
+            adgent,
+            adgentContract,
+            2000,
+            tokenAllocation
+        );
+
+        // --- FUND WALLET ---
+        // USDT en BSC usa 18 decimals
+        deal(USDT, address(this), 1000 * 1e18);
+        usdt.transfer(address(wallet), 1000 * 1e18);
+
+        // --- BALANCES ANTES DEL PRIMER INVEST ---
+        uint256 usdtAdgentContractBefore = usdt.balanceOf(adgentContract);
+        uint256 usdtAdgentBefore = usdt.balanceOf(adgent);
+        uint256 usdtBefore = usdt.balanceOf(address(wallet));
+        uint256 btcbBefore = btcb.balanceOf(address(wallet));
+        uint256 ethBefore = eth.balanceOf(address(wallet));
+
+        console.log("=== BALANCES ANTES DEL PRIMER INVEST ===");
+        console.log("USDT adgentContract:", usdtAdgentContractBefore);
+        console.log("USDT adgent:", usdtAdgentBefore);
+        console.log("USDT wallet:", usdtBefore);
+        console.log("BTCB wallet:", btcbBefore);
+        console.log("ETH wallet:", ethBefore);
+
+        // --- PRIMER INVEST ---
+        bytes[] memory path = new bytes[](0);
+        vm.prank(adgent);
+        wallet.invest(path);
+
+        // --- BALANCES DESPUES DEL PRIMER INVEST ---
+        uint256 usdtAdgentContractAfter = usdt.balanceOf(adgentContract);
+        uint256 usdtAdgentAfter = usdt.balanceOf(adgent);
+        uint256 usdtAfter = usdt.balanceOf(address(wallet));
+        uint256 btcbAfter = btcb.balanceOf(address(wallet));
+        uint256 ethAfter = eth.balanceOf(address(wallet));
+
+        console.log("=== BALANCES DESPUES DEL PRIMER INVEST ===");
+        console.log("USDT adgentContract:", usdtAdgentContractAfter);
+        console.log("USDT adgent:", usdtAdgentAfter);
+        console.log("USDT wallet:", usdtAfter);
+        console.log("BTCB wallet:", btcbAfter);
+        console.log("ETH wallet:", ethAfter);
+
+        // Verificar que se invirtió
+        assertGt(btcbAfter, btcbBefore, "Should have BTCB after invest");
+        assertGt(ethAfter, ethBefore, "Should have ETH after invest");
+        assertGt(usdtAdgentAfter, usdtAdgentBefore, "Adgent should have gas fee");
+        assertGt(usdtAdgentContractAfter, usdtAdgentContractBefore, "Adgent contract should have fee");
+
+        // --- SEGUNDO FUND + ADD ASSET (USDY) ---
+        deal(USDT, address(this), 1000 * 1e18);
+        usdt.transfer(address(wallet), 1000 * 1e18);
+
+        StockWallet.AssetConfig memory usdyConfig = StockWallet.AssetConfig({
+            allocationBps: 2000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+        StockWallet.TokenAllocationConfig memory usdyTokenConfig = StockWallet
+            .TokenAllocationConfig({token: USDY, configs: usdyConfig});
+
+        vm.prank(owner);
+        wallet.addAsset(usdyTokenConfig, address(0));
+
+        // Verificar que BTCB y ETH se re-escalaron (5000 * 8000/10000 = 4000)
+        (uint256 btcbAlloc, , ) = wallet.assetConfig(BTCB);
+        assertEq(btcbAlloc, 4000, "BTCB should re-scale to 4000");
+        (uint256 ethAlloc, , ) = wallet.assetConfig(ETH);
+        assertEq(ethAlloc, 4000, "ETH should re-scale to 4000");
+        (uint256 usdyAlloc, , ) = wallet.assetConfig(USDY);
+        assertEq(usdyAlloc, 2000, "USDY should be 2000");
+
+        uint256 usdtBeforeSecondInvest = usdt.balanceOf(address(wallet));
+        uint256 usdyBefore = usdy.balanceOf(address(wallet));
+
+        console.log("=== ANTES DEL SEGUNDO INVEST (con USDY) ===");
+        console.log("USDT wallet:", usdtBeforeSecondInvest);
+        console.log("USDY wallet:", usdyBefore);
+
+        // --- SEGUNDO INVEST ---
+        bytes[] memory paths = new bytes[](0);
+        vm.prank(adgent);
+        wallet.invest(paths);
+
+        uint256 usdtAfterSecondInvest = usdt.balanceOf(address(wallet));
+        uint256 usdyAfter = usdy.balanceOf(address(wallet));
+        uint256 btcbFinal = btcb.balanceOf(address(wallet));
+        uint256 ethFinal = eth.balanceOf(address(wallet));
+
+        console.log("=== DESPUES DEL SEGUNDO INVEST ===");
+        console.log("USDT wallet:", usdtAfterSecondInvest);
+        console.log("USDY wallet:", usdyAfter);
+        console.log("BTCB wallet:", btcbFinal);
+        console.log("ETH wallet:", ethFinal);
+
+        // --- SELLTOKENALL ---
+        uint256 usdtBeforeSell = usdt.balanceOf(address(wallet));
+
+        vm.prank(owner);
+        wallet.selltokenAll(new bytes[](0));
+
+        uint256 usdtAfterSell = usdt.balanceOf(address(wallet));
+        uint256 btcbAfterSell = btcb.balanceOf(address(wallet));
+        uint256 ethAfterSell = eth.balanceOf(address(wallet));
+        uint256 usdyAfterSell = usdy.balanceOf(address(wallet));
+
+        console.log("=== DESPUES DE SELLTOKENALL ===");
+        console.log("USDT wallet:", usdtAfterSell);
+        console.log("BTCB wallet:", btcbAfterSell);
+        console.log("ETH wallet:", ethAfterSell);
+        console.log("USDY wallet:", usdyAfterSell);
+
+        // --- WITHDRAW ---
+        uint256 ownerBefore = usdt.balanceOf(owner);
+
+        if (usdtAfterSell > 0) {
+            vm.prank(owner);
+            wallet.withdrawAssetUsdt(usdtAfterSell);
+        }
+
+        uint256 ownerAfter = usdt.balanceOf(owner);
+        uint256 walletFinal = usdt.balanceOf(address(wallet));
+
+        console.log("=== DESPUES DE WITHDRAW ===");
+        console.log("USDT owner:", ownerAfter);
+        console.log("USDT wallet:", walletFinal);
+
+        assertGt(ownerAfter, ownerBefore, "Owner should have withdrawn USDT");
+        assertEq(walletFinal, 0, "Wallet should be empty after withdraw");
+    }
+
+    // =============================================================
+    // === TEST 2: Ciclo completo con BTCB + NVDA (Ondo stock) ===
+    // =============================================================
+
+    /// @notice Deploy con BTCB+NVDA, investir, selltokenAll, withdraw
+    ///         Testea que el contrato funciona con tokens de Ondo Finance
+    function test_fullCycle_btc_nvda() public {
+        // --- DEPLOY ---
+        StockWallet.AssetConfig memory configBtcb = StockWallet.AssetConfig({
+            allocationBps: 5000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+        StockWallet.AssetConfig memory configNvda = StockWallet.AssetConfig({
+            allocationBps: 5000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+
+        StockWallet.TokenAllocationConfig[]
+            memory tokenAllocation = new StockWallet.TokenAllocationConfig[](2);
+        tokenAllocation[0] = StockWallet.TokenAllocationConfig({
+            token: BTCB,
+            configs: configBtcb
+        });
+        tokenAllocation[1] = StockWallet.TokenAllocationConfig({
+            token: NVDAon,
+            configs: configNvda
+        });
+
+        vm.prank(owner);
+        wallet = new StockWallet(
+            USDT,
+            UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
+            UNISWAP_V3_QUOTER,
+            adgent,
+            adgentContract,
+            2000,
+            tokenAllocation
+        );
+
+        // --- FUND ---
+        deal(USDT, address(this), 500 * 1e18);
+        usdt.transfer(address(wallet), 500 * 1e18);
+
+        uint256 usdtBefore = usdt.balanceOf(address(wallet));
+        uint256 btcbBefore = btcb.balanceOf(address(wallet));
+        uint256 nvdaBefore = nvda.balanceOf(address(wallet));
+
+        console.log("=== BALANCES ANTES (BTCB + NVDA) ===");
+        console.log("USDT wallet:", usdtBefore);
+        console.log("BTCB wallet:", btcbBefore);
+        console.log("NVDA wallet:", nvdaBefore);
+
+        // --- INVEST ---
+        bytes[] memory path = new bytes[](0);
+        vm.prank(adgent);
+        wallet.invest(path);
+
+        uint256 usdtAfter = usdt.balanceOf(address(wallet));
+        uint256 btcbAfter = btcb.balanceOf(address(wallet));
+        uint256 nvdaAfter = nvda.balanceOf(address(wallet));
+
+        console.log("=== BALANCES DESPUES DE INVEST ===");
+        console.log("USDT wallet:", usdtAfter);
+        console.log("BTCB wallet:", btcbAfter);
+        console.log("NVDA wallet:", nvdaAfter);
+
+        // Verificar que se compró algo
+        assertGt(btcbAfter, btcbBefore, "Should have BTCB after invest");
+        console.log("NVDA received:", nvdaAfter);
+
+        // --- SELLTOKENALL ---
+        vm.prank(owner);
+        wallet.selltokenAll(new bytes[](0));
+
+        uint256 usdtAfterSell = usdt.balanceOf(address(wallet));
+        uint256 btcbAfterSell = btcb.balanceOf(address(wallet));
+        uint256 nvdaAfterSell = nvda.balanceOf(address(wallet));
+
+        console.log("=== DESPUES DE SELLTOKENALL ===");
+        console.log("USDT wallet:", usdtAfterSell);
+        console.log("BTCB wallet:", btcbAfterSell);
+        console.log("NVDA wallet:", nvdaAfterSell);
+
+        // --- WITHDRAW ---
+        uint256 ownerBefore = usdt.balanceOf(owner);
+
+        if (usdtAfterSell > 0) {
+            vm.prank(owner);
+            wallet.withdrawAssetUsdt(usdtAfterSell);
+
+            uint256 ownerAfter = usdt.balanceOf(owner);
+            console.log("=== DESPUES DE WITHDRAW ===");
+            console.log("USDT owner:", ownerAfter);
+            assertGt(ownerAfter, ownerBefore, "Owner should have withdrawn USDT");
+        }
+    }
+
+    // =============================================================
+    // === TEST 3: Ciclo completo con addAsset reemplazando ETH por TSLA ===
+    // =============================================================
+
+    /// @notice Deploy con BTCB+ETH, investir, reemplazar ETH con TSLA, investir de nuevo
+    function test_fullCycle_replace_eth_with_tsla() public {
+        // --- DEPLOY ---
+        StockWallet.AssetConfig memory configBtcb = StockWallet.AssetConfig({
+            allocationBps: 5000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+        StockWallet.AssetConfig memory configEth = StockWallet.AssetConfig({
+            allocationBps: 5000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+
+        StockWallet.TokenAllocationConfig[]
+            memory tokenAllocation = new StockWallet.TokenAllocationConfig[](2);
+        tokenAllocation[0] = StockWallet.TokenAllocationConfig({
+            token: BTCB,
+            configs: configBtcb
+        });
+        tokenAllocation[1] = StockWallet.TokenAllocationConfig({
+            token: ETH,
+            configs: configEth
+        });
+
+        vm.prank(owner);
+        wallet = new StockWallet(
+            USDT,
+            UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
+            UNISWAP_V3_QUOTER,
+            adgent,
+            adgentContract,
+            2000,
+            tokenAllocation
+        );
+
+        // --- FUND + INVEST ---
+        deal(USDT, address(this), 500 * 1e18);
+        usdt.transfer(address(wallet), 500 * 1e18);
+
+        console.log("=== ANTES: BTCB + ETH ===");
+        console.log("USDT wallet:", usdt.balanceOf(address(wallet)));
+
+        bytes[] memory path = new bytes[](0);
+        vm.prank(adgent);
+        wallet.invest(path);
+
+        uint256 ethHeld = eth.balanceOf(address(wallet));
+        uint256 btcbHeld = btcb.balanceOf(address(wallet));
+        console.log("=== DESPUES DEL PRIMER INVEST ===");
+        console.log("BTCB wallet:", btcbHeld);
+        console.log("ETH wallet:", ethHeld);
+        assertGt(ethHeld, 0, "Should have ETH");
+
+        // --- ADD ASSET: TSLA reemplazando a ETH ---
+        StockWallet.AssetConfig memory tslaConfig = StockWallet.AssetConfig({
+            allocationBps: 3000,
+            stopLossBps: 9500,
+            takeProfitBps: 11000
+        });
+        StockWallet.TokenAllocationConfig memory tslaTokenConfig = StockWallet
+            .TokenAllocationConfig({token: TSLAon, configs: tslaConfig});
+
+        vm.prank(owner);
+        wallet.addAsset(tslaTokenConfig, ETH);
+
+        // ETH pasó de 5000 a 2000, TSLA tiene 3000
+        (uint256 ethAlloc, , ) = wallet.assetConfig(ETH);
+        assertEq(ethAlloc, 2000, "ETH should be 2000 after TSLA takes 3000");
+        (uint256 tslaAlloc, , ) = wallet.assetConfig(TSLAon);
+        assertEq(tslaAlloc, 3000, "TSLA should be 3000");
+
+        console.log("=== DESPUES DE addAsset(TSLA, replace ETH) ===");
+        console.log("ETH alloc:", ethAlloc);
+        console.log("TSLA alloc:", tslaAlloc);
+
+        // --- SEGUNDO FUND + INVEST ---
+        deal(USDT, address(this), 500 * 1e18);
+        usdt.transfer(address(wallet), 500 * 1e18);
+
+        uint256 tslaBefore = tsla.balanceOf(address(wallet));
+
+        bytes[] memory paths = new bytes[](0);
+        vm.prank(adgent);
+        wallet.invest(paths);
+
+        uint256 tslaAfter = tsla.balanceOf(address(wallet));
+        uint256 ethAfter = eth.balanceOf(address(wallet));
+        uint256 btcbAfter = btcb.balanceOf(address(wallet));
+        uint256 usdtAfter = usdt.balanceOf(address(wallet));
+
+        console.log("=== DESPUES DEL SEGUNDO INVEST ===");
+        console.log("BTCB wallet:", btcbAfter);
+        console.log("ETH wallet:", ethAfter);
+        console.log("TSLA wallet:", tslaAfter);
+        console.log("USDT wallet:", usdtAfter);
+
+        // --- SELLTOKENALL + WITHDRAW ---
+        vm.prank(owner);
+        wallet.selltokenAll(new bytes[](0));
+
+        uint256 usdtFinal = usdt.balanceOf(address(wallet));
+        console.log("=== DESPUES DE SELLTOKENALL ===");
+        console.log("USDT wallet:", usdtFinal);
+        console.log("BTCB wallet:", btcb.balanceOf(address(wallet)));
+        console.log("ETH wallet:", eth.balanceOf(address(wallet)));
+        console.log("TSLA wallet:", tsla.balanceOf(address(wallet)));
+
+        if (usdtFinal > 0) {
+            vm.prank(owner);
+            wallet.withdrawAssetUsdt(usdtFinal);
+            console.log("=== DESPUES DE WITHDRAW ===");
+            console.log("USDT owner:", usdt.balanceOf(owner));
+        }
+    }
+}

@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import {Script} from "forge-std/Script.sol";
 import {StockWallet} from "../src/StockWallet.sol";
@@ -53,7 +53,12 @@ contract deployStockWalletScript is Script {
         StockWallet stockWallet = new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            address(0), // universal_router
+            address(0), // permit2
             UNISWAP_V3_QUOTER,
+            address(0), // quoterV4 (V4 disabled on Celo)
+            address(0), // poolManager (V4 disabled on Celo)
+            address(0), // v4Scanner
             address(0xf43ea1700E117e9c456690514Db9C5b1405EC5E5),
             address(0x74E16132B76Af0B03730F5c4BF540D777b085DDc),
             2000,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
 
@@ -38,6 +38,11 @@ contract SwapUniversalRouterTest is Test {
 
     uint24 constant FEE = 3000;
     uint256 constant AMOUNT_IN = 4_900_000; // 4.9 USDC
+
+    function setUp() public {
+        // Fork de Celo mainnet
+        vm.createSelectFork("https://forno.celo.org");
+    }
 
     function testSwapUniversalRouter() public {
         // Confirmar que estamos en el fork de Celo.

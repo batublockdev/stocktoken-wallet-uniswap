@@ -1,6 +1,6 @@
 //SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import {Test, console, stdMath} from "../lib/forge-std/src/Test.sol";
 import {StockWallet} from "../src/StockWallet.sol";
@@ -13,7 +13,9 @@ import {
     PLAST,
     WBRL,
     UNISWAP_V3_FACTORY,
-    UNISWAP_V3_QUOTER
+    UNISWAP_V3_QUOTER,
+    UNIVERSAL_ROUTER,
+    PERMIT2
 } from "./ConstantsCelo.sol";
 
 contract StockWalletFullTest is Test {
@@ -59,6 +61,8 @@ contract StockWalletFullTest is Test {
     }
 
     function setUp() public virtual {
+        // Fork de Celo mainnet para que los contratos reales existan
+        vm.createSelectFork("https://forno.celo.org");
         StockWallet.AssetConfig memory configWbtc = StockWallet.AssetConfig({
             allocationBps: 5000,
             stopLossBps: 9500,
@@ -85,7 +89,12 @@ contract StockWalletFullTest is Test {
         wallet = new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -139,7 +148,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             address(0),
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -150,7 +164,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             address(0),
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -165,7 +184,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -195,7 +219,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -218,7 +247,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -246,7 +280,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -274,7 +313,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -456,7 +500,7 @@ contract StockWalletFullTest is Test {
 
     function test_withdrawAsset_success_after_invest() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         uint256 wbtcBefore = wbtc.balanceOf(address(wallet));
         assertGt(wbtcBefore, 0);
@@ -715,7 +759,7 @@ contract StockWalletFullTest is Test {
         uint256 contractBefore = usdt.balanceOf(adgentContract);
 
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         assertGt(usdt.balanceOf(adgent), adgentBefore);
         assertGt(usdt.balanceOf(adgentContract), contractBefore);
@@ -732,7 +776,7 @@ contract StockWalletFullTest is Test {
         // AccessControl revert sin selector específico (versión de OZ no expone el error públicamente)
         vm.expectRevert();
         vm.prank(user);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
     }
 
     function test_invest_revert_InsufficientBalance() public {
@@ -749,7 +793,7 @@ contract StockWalletFullTest is Test {
             )
         );
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
     }
 
     // =============================================================
@@ -758,7 +802,7 @@ contract StockWalletFullTest is Test {
 
     /* function test_selltoken_takeProfit_triggered() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         uint256 posAmount = _getPosAmount(WBTC);
         uint256 posInvested = _getPosInvested(WBTC);
@@ -773,7 +817,7 @@ contract StockWalletFullTest is Test {
         bytes memory pathToUsdc = abi.encodePacked(WBTC, uint24(3000), USDT);
 
         vm.prank(adgent);
-        wallet.selltoken(WBTC, pathToUsdc);
+        wallet.selltoken(WBTC, pathToUsdc, new StockWallet.V4PoolData[](0));
 
         assertLt(wbtc.balanceOf(address(wallet)), posAmount);
         assertGt(usdt.balanceOf(address(wallet)), usdtBefore);
@@ -781,7 +825,7 @@ contract StockWalletFullTest is Test {
 
     function test_selltoken_stopLoss_triggered() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         uint256 posAmount = _getPosAmount(WBTC);
         uint256 posInvested = _getPosInvested(WBTC);
@@ -795,7 +839,7 @@ contract StockWalletFullTest is Test {
         bytes memory pathToUsdc = abi.encodePacked(WBTC, uint24(3000), USDT);
 
         vm.prank(adgent);
-        wallet.selltoken(WBTC, pathToUsdc);
+        wallet.selltoken(WBTC, pathToUsdc, new StockWallet.V4PoolData[](0));
 
         assertEq(wbtc.balanceOf(address(wallet)), 0);
         assertGt(usdt.balanceOf(address(wallet)), usdtBefore);
@@ -804,7 +848,7 @@ contract StockWalletFullTest is Test {
 
     function test_selltoken_revert_TokenNotReadytoSell() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         bytes memory pathToUsdc = abi.encodePacked(WBTC, uint24(3000), USDT);
 
@@ -815,13 +859,13 @@ contract StockWalletFullTest is Test {
                 WBTC
             )
         );
-        wallet.selltoken(WBTC, pathToUsdc);
+        wallet.selltoken(WBTC, pathToUsdc, new StockWallet.V4PoolData[](0));
     }
 
     function test_selltoken_revert_NotAdgentRole() public {
         vm.expectRevert();
         vm.prank(user);
-        wallet.selltoken(WBTC, new bytes(0));
+        wallet.selltoken(WBTC, new bytes(0), new StockWallet.V4PoolData[](0));
     }
 
     // =============================================================
@@ -830,7 +874,7 @@ contract StockWalletFullTest is Test {
 
     function test_selltokenAll_success() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         assertGt(wbtc.balanceOf(address(wallet)), 0);
         assertGt(weth.balanceOf(address(wallet)), 0);
@@ -922,7 +966,12 @@ contract StockWalletFullTest is Test {
         wallet = new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             2000,
@@ -934,7 +983,7 @@ contract StockWalletFullTest is Test {
         usdt.transfer(address(wallet), 10 * 1e6);
 
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         deal(WBRL, address(this), 5046 * 1e18);
         wbrl.approve(address(wallet), 5046 * 1e18);
@@ -962,7 +1011,7 @@ contract StockWalletFullTest is Test {
         wallet.addAsset(ptc, WETH);
 
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         bytes[] memory sellPaths = new bytes[](0);
         vm.prank(owner);
@@ -998,7 +1047,12 @@ contract StockWalletFullTest is Test {
         wallet = new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             2000,
@@ -1010,13 +1064,13 @@ contract StockWalletFullTest is Test {
         usdt.transfer(address(wallet), 10 * 1e6);
 
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         wallet.modifyPosition(100e6, XAUt0);
 
         bytes memory path;
         vm.prank(adgent);
-        wallet.selltoken(XAUt0, path);
+        wallet.selltoken(XAUt0, path, new StockWallet.V4PoolData[](0));
 
         assertEq(xaut0.balanceOf(address(wallet)), 0);
     }*/
@@ -1040,7 +1094,12 @@ contract StockWalletFullTest is Test {
         new StockWallet(
             USDT,
             UNISWAP_V3_FACTORY,
+            UNIVERSAL_ROUTER,
+            PERMIT2,
             UNISWAP_V3_QUOTER,
+            address(0),
+            address(0),
+            address(0),
             adgent,
             adgentContract,
             200,
@@ -1203,7 +1262,7 @@ contract StockWalletFullTest is Test {
     // L670: path con receiver incorrecto (!= usdc)
     function test_selltoken_revert_WrongPathReceiver() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         // Path que termina en WETH en vez de USDT
         bytes memory badPath = abi.encodePacked(WBTC, uint24(3000), WETH);
@@ -1215,7 +1274,7 @@ contract StockWalletFullTest is Test {
             )
         );
         vm.prank(adgent);
-        wallet.selltoken(WBTC, badPath);
+        wallet.selltoken(WBTC, badPath, new StockWallet.V4PoolData[](0));
     }
 
     // L677: tokenBalance == 0
@@ -1232,7 +1291,7 @@ contract StockWalletFullTest is Test {
             )
         );
         vm.prank(adgent);
-        wallet.selltoken(WBTC, path);
+        wallet.selltoken(WBTC, path, new StockWallet.V4PoolData[](0));
     }
 
     // L685: PoolNoExiste - token sin pool en Uniswap
@@ -1254,7 +1313,7 @@ contract StockWalletFullTest is Test {
             )
         );
         vm.prank(adgent);
-        wallet.selltoken(PLAST, path);
+        wallet.selltoken(PLAST, path, new StockWallet.V4PoolData[](0));
     }
 
     // =============================================================
@@ -1297,7 +1356,7 @@ contract StockWalletFullTest is Test {
     // L789-791: selltokenAll con paths válidos (setea assetPath)
     function test_selltokenAll_withPaths_setsAssetPath() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         bytes[] memory paths = new bytes[](2);
         paths[0] = abi.encodePacked(WBTC, uint24(3000), USDT);
@@ -1321,7 +1380,7 @@ contract StockWalletFullTest is Test {
         paths[1] = abi.encodePacked(USDT, uint24(3000), WETH);
 
         vm.prank(adgent);
-        wallet.invest(paths);
+        wallet.invest(paths, new StockWallet.V4PoolData[][](0));
 
         assertGt(wbtc.balanceOf(address(wallet)), 0);
         assertGt(weth.balanceOf(address(wallet)), 0);
@@ -1408,7 +1467,7 @@ contract StockWalletFullTest is Test {
 
     /* function test_selltoken_takeProfit_withPath() public {
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         uint256 posInvested = _getPosInvested(WBTC);
         wallet.modifyPosition(posInvested / 10, WBTC);
@@ -1417,7 +1476,7 @@ contract StockWalletFullTest is Test {
         bytes memory path = abi.encodePacked(WBTC, uint24(3000), USDT);
 
         vm.prank(adgent);
-        wallet.selltoken(WBTC, path);
+        wallet.selltoken(WBTC, path, new StockWallet.V4PoolData[](0));
 
         assertLt(wbtc.balanceOf(address(wallet)), _getPosAmount(WBTC) + wbtc.balanceOf(address(wallet)));
     }*/
@@ -1440,7 +1499,7 @@ contract StockWalletFullTest is Test {
 
         // Invest: PLAST swap fallará, amountNotInvested acumulará
         vm.prank(adgent);
-        wallet.invest(new bytes[](0));
+        wallet.invest(new bytes[](0), new StockWallet.V4PoolData[][](0));
 
         // WBTC y WETH deberían tener balance, PLAST no
         assertGt(wbtc.balanceOf(address(wallet)), 0);
