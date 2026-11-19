@@ -357,7 +357,12 @@ contract StockWallet is
     event TradingPaused(address indexed account);
     event TradingUnpaused(address indexed account);
     event GasTokenUpdated(address indexed oldToken, address indexed newToken);
-    event GasSwapped(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
+    event GasSwapped(
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut
+    );
 
     // ============
     //   FUNCTIONS
@@ -641,7 +646,7 @@ contract StockWallet is
         emit AssetWithdrawn(_token, msg.sender, balance);
     }
 
-    function SellAssetOwner(address _token) external onlyOwner {
+    function SellAssetOwner(address _token) external whenNotPaused onlyOwner {
         if (_token == address(0)) {
             revert Address_Zero();
         }
@@ -1835,74 +1840,5 @@ contract StockWallet is
         address _token
     ) external view returns (AssetConfig memory) {
         return assetConfig[_token];
-    }
-
-    // ============================================================
-    // === TEST ONLY FUNCTIONS — ELIMINAR ANTES DE PRODUCCIÓN ===
-    // ============================================================
-    // Las siguientes funciones existen únicamente para facilitar testing
-    // de selltoken() (stop-loss y take-profit) sin depender de movimientos
-    // reales del mercado. Permiten setear manualmente el position.invested
-    // y position.amount para simular escenarios de precio.
-    //
-    // ⚠️ ADVERTENCIA: Estas funciones NO deben ir a mainnet.
-    // Cualquiera puede llamarlas y manipular las posiciones.
-    // En producción, eliminar o envolver en un modifier que verifique
-    // que el caller es el owner y el contrato está en modo test.
-    // ============================================================
-
-    /**
-     * @dev TEST ONLY — Setea manualmente la posición de un token.
-     *      Permite simular que el precio subió o bajó para testear
-     *      selltoken() con triggers de stop-loss y take-profit.
-     *
-     *      Casos de uso en testing:
-     *      - Stop-loss: setear _invested alto relativo al _amount
-     *        para que tokenPriceUsdcNow <= minimumToLose
-     *      - Take-profit: setear _invested bajo relativo al _amount
-     *        para que tokenPriceUsdcNow >= minimumToWin
-     *
-     * @param _token Address del token cuya posición se quiere modificar.
-     * @param _amount Cantidad de tokens que la wallet "tiene".
-     * @param _invested Cantidad de USDC que se "invirtió" originalmente.
-     *
-     * ⚠️ ELIMINAR EN PRODUCCIÓN
-     */
-    function __testSetPosition(
-        address _token,
-        uint256 _amount,
-        uint256 _invested
-    ) external {
-        assetPosition[_token] = Position({
-            amount: _amount,
-            invested: _invested
-        });
-    }
-
-    /**
-     * @dev TEST ONLY — Setea manualmente el balance de un token en la wallet.
-     *      Útil cuando se quiere testear selltoken() sin haber hecho invest()
-     *      previamente. Usa deal() de forge para mintear tokens reales.
-     *
-     *      En tests de fork de BSC, usar vm.deal o deal() de forge-std
-     *      para mintear tokens reales on-chain, y luego usar esta función
-     *      para setear la posición contable.
-     *
-     * @param _token Address del token.
-     * @param _amount Cantidad de tokens a setear como balance.
-     * @param _invested Cantidad de USDC "invertida".
-     *
-     * ⚠️ ELIMINAR EN PRODUCCIÓN
-     */
-    function __testFundAndSetPosition(
-        address _token,
-        uint256 _amount,
-        uint256 _invested
-    ) external {
-        // Setear la posición contable
-        assetPosition[_token] = Position({
-            amount: _amount,
-            invested: _invested
-        });
     }
 }

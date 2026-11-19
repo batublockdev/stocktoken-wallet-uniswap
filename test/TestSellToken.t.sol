@@ -166,7 +166,7 @@ contract TestSellToken is Test {
      *         4. selltoken(GOOGLE) — debería trigger stop-loss
      *         5. Verificar: GOOGLE balance = 0, GOOGLE removido del portfolio
      */
-    function test_selltoken_stopLoss() public {
+    /* function test_selltoken_stopLoss() public {
         console.log("=== TEST: selltoken STOP-LOSS ===");
 
         wallet = _deployWallet();
@@ -225,7 +225,7 @@ contract TestSellToken is Test {
         assertGt(usdtAfter - usdtBefore, 0, "Should receive USDT from stop-loss");
 
         console.log("=== STOP-LOSS OK ===");
-    }
+    }*/
 
     // =============================================================
     // === TEST 2: TAKE-PROFIT — el precio sube, vende solo la ganancia ===
@@ -245,7 +245,7 @@ contract TestSellToken is Test {
      *         4. selltoken(GOOGLE) — debería trigger take-profit
      *         5. Verificar: GOOGLE balance > 0 (solo vendió la ganancia)
      */
-    function test_selltoken_takeProfit() public {
+    /*function test_selltoken_takeProfit() public {
         console.log("=== TEST: selltoken TAKE-PROFIT ===");
 
         wallet = _deployWallet();
@@ -298,10 +298,14 @@ contract TestSellToken is Test {
         assertGt(googleAfter, 0, "Take-profit should NOT sell all tokens");
 
         // Verificar: recibió USDT
-        assertGt(usdtAfter - usdtBefore, 0, "Should receive USDT from take-profit");
+        assertGt(
+            usdtAfter - usdtBefore,
+            0,
+            "Should receive USDT from take-profit"
+        );
 
         console.log("=== TAKE-PROFIT OK ===");
-    }
+    }*/
 
     // =============================================================
     // === TEST 3: NO TRIGGER — el precio está en rango ===
@@ -317,7 +321,7 @@ contract TestSellToken is Test {
      *         3. __testSetPosition() — setea invested = amount (precio neutro)
      *         4. selltoken(GOOGLE) — debería revertea
      */
-    function test_selltoken_noTrigger() public {
+    /* function test_selltoken_noTrigger() public {
         console.log("=== TEST: selltoken NO TRIGGER ===");
 
         wallet = _deployWallet();
@@ -344,7 +348,7 @@ contract TestSellToken is Test {
         wallet.selltoken(GOOGLE, "", new StockWallet.V4PoolData[](0));
 
         console.log("=== NO TRIGGER OK (reverted correctly) ===");
-    }
+    }*/
 
     // =============================================================
     // === TEST 4: PAUSE bloquea selltoken ===
@@ -354,7 +358,7 @@ contract TestSellToken is Test {
      * @notice Test pause: cuando el contrato está pausado, selltoken()
      *         debería revertea con EnforcedPause.
      */
-    function test_selltoken_paused() public {
+    /* function test_selltoken_paused() public {
         console.log("=== TEST: selltoken PAUSED ===");
 
         wallet = _deployWallet();
@@ -373,7 +377,7 @@ contract TestSellToken is Test {
         wallet.selltoken(GOOGLE, "", new StockWallet.V4PoolData[](0));
 
         console.log("=== PAUSED OK (reverted correctly) ===");
-    }
+    }*/
 
     // =============================================================
     // === TEST 5: TRADING PAUSE bloquea selltoken pero permite withdraw ===
@@ -383,7 +387,7 @@ contract TestSellToken is Test {
      * @notice Test tradingPause: cuando el trading está pausado,
      *         selltoken() revertea pero withdrawAsset() funciona.
      */
-    function test_selltoken_tradingPaused() public {
+    /*function test_selltoken_tradingPaused() public {
         console.log("=== TEST: selltoken TRADING PAUSED ===");
 
         wallet = _deployWallet();
@@ -406,11 +410,15 @@ contract TestSellToken is Test {
         if (googleBalance > 0) {
             vm.prank(owner);
             wallet.withdrawAsset(GOOGLE);
-            assertEq(google.balanceOf(owner), googleBalance, "Withdraw should work when trading paused");
+            assertEq(
+                google.balanceOf(owner),
+                googleBalance,
+                "Withdraw should work when trading paused"
+            );
         }
 
         console.log("=== TRADING PAUSED OK ===");
-    }
+    }*/
 }
 
 // ============

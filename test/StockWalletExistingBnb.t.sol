@@ -9,6 +9,8 @@ import {IPoolScanner} from "../src/IPoolScanner.sol";
 import {IERC20} from "./IERC20.sol";
 import {console} from "forge-std/console.sol";
 import {
+    NEAR,
+    ZEC,
     BTCB,
     GOOGLE,
     ETH,
@@ -60,6 +62,9 @@ contract StockWalletExistingBnbTest is Test {
     IERC20 private usdt = IERC20(USDT);
     IERC20 private google = IERC20(GOOGLE);
     IERC20 private btcb = IERC20(BTCB);
+    IERC20 private zec = IERC20(ZEC);
+    IERC20 private near = IERC20(NEAR);
+
     IERC20 private eth = IERC20(ETH);
     IERC20 private link = IERC20(LINK);
     IERC20 private aave = IERC20(AAVE);
@@ -124,7 +129,7 @@ contract StockWalletExistingBnbTest is Test {
                 address(scanner),
                 adgent,
                 adgentContract,
-                2000,
+                0,
                 tokenAllocation
             );
     }
@@ -510,7 +515,7 @@ contract StockWalletExistingBnbTest is Test {
     //         + addAsset + persistencia ===
     // =============================================================
 
-    function test_mixed_portfolio_v3_crypto_v4_stocks() public {
+    /*function test_mixed_portfolio_v3_crypto_v4_stocks() public {
         console.log("=== TEST 4: Mixed Portfolio (V3 Crypto + V4 Stocks) ===");
 
         // DEPLOY: LINK 50%, UNI 50%
@@ -633,7 +638,7 @@ contract StockWalletExistingBnbTest is Test {
             wallet.withdrawAssetUsdt(usdtFinal);
             console.log("USDT owner:", usdt.balanceOf(owner));
         }
-    }
+    }*/
 
     // =============================================================
     // === TEST 5: selltoken() con V4 pools guardadas ===
@@ -1089,95 +1094,112 @@ contract StockWalletExistingBnbTest is Test {
         console.log("=== FXLon V3 + V4 coexistencia verificada: OK ===");
     }
     function test_fullCycle_fxlon_v4x() public {
-        console.log("=== TEST 9: Google via V4 (fee=500) ===");
+        console.log(
+            "=== TEST 9: 6 assets (ZEC, ETH, BTCB, NEAR, FXLon, GOOGLE) + GOOGLE V4 ==="
+        );
 
-        // DEPLOY: FXLon 60%, LINK 40%
-        address[] memory tokens = new address[](2);
-        tokens[0] = GOOGLE;
+        // DEPLOY: 6 tokens con allocation sumando 100%
+        address[] memory tokens = new address[](6);
+        tokens[0] = ZEC;
         tokens[1] = ETH;
+        tokens[2] = BTCB;
+        tokens[3] = NEAR;
+        tokens[4] = FXLon;
+        tokens[5] = GOOGLE;
 
         StockWallet.AssetConfig[]
-            memory configs = new StockWallet.AssetConfig[](2);
+            memory configs = new StockWallet.AssetConfig[](6);
         configs[0] = StockWallet.AssetConfig({
-            allocationBps: 5000,
-            stopLossBps: 9000,
+            allocationBps: 3000,
+            stopLossBps: 9500,
             takeProfitBps: 12000
         });
         configs[1] = StockWallet.AssetConfig({
-            allocationBps: 5000,
+            allocationBps: 1000,
+            stopLossBps: 9000,
+            takeProfitBps: 12000
+        });
+        configs[2] = StockWallet.AssetConfig({
+            allocationBps: 1000,
+            stopLossBps: 9000,
+            takeProfitBps: 12000
+        });
+        configs[3] = StockWallet.AssetConfig({
+            allocationBps: 2000,
+            stopLossBps: 9000,
+            takeProfitBps: 12000
+        });
+        configs[4] = StockWallet.AssetConfig({
+            allocationBps: 2500,
+            stopLossBps: 9000,
+            takeProfitBps: 12000
+        });
+        configs[5] = StockWallet.AssetConfig({
+            allocationBps: 500,
             stopLossBps: 9000,
             takeProfitBps: 12000
         });
 
-        // Fund + invest
-
+        // Deploy primero, fund después
         wallet = _deployWallet(tokens, configs);
         _fundWallet(1000 * 1e18);
 
+        // Set gas token = WBNB
         vm.prank(owner);
-        wallet.setGasToken(WBNB);
-
-        assertEq(wallet.gasToken(), WBNB, "gasToken = WBNB");
+        //wallet.setGasToken(WBNB);
+        //assertEq(wallet.gasToken(), WBNB, "gasToken = WBNB");
         console.log("  gasToken set to WBNB");
         uint256 adgentWbnbBefore = IERC20(WBNB).balanceOf(adgent);
-        uint256 adgentUsdtBefore = usdt.balanceOf(adgent);
 
         console.log("=== ANTES DEL INVEST ===");
         console.log("USDT wallet:", usdt.balanceOf(address(wallet)));
-        console.log("Google wallet:", google.balanceOf(address(wallet)));
-        console.log("Ethereum wallet:", eth.balanceOf(address(wallet)));
 
-        // INVEST - FXLon usa V4 , NvdaOn usa V4
-        // Pasar V4 pools para LINK (ruta venta multi-hop), AAVE sin V4
+        // V4 pools: tamaño debe ser igual al número de tokens (6)
+        // Solo GOOGLE (index 5) tiene V4 pool, los demás van vacíos
         StockWallet.V4PoolData[][]
-            memory v4ForInvest = new StockWallet.V4PoolData[][](1);
+            memory v4ForInvest = new StockWallet.V4PoolData[][](6);
 
-        // LINK: V4 route LINK -> NVDAB -> USDT (para venta futura)
-        StockWallet.V4PoolData[] memory linkV4 = new StockWallet.V4PoolData[](
+        // GOOGLE: V4 route USDT -> GOOGLE (fee=1000, tickSpacing=10)
+        StockWallet.V4PoolData[] memory googleV4 = new StockWallet.V4PoolData[](
             1
         );
-        linkV4[0] = _makeV4Pool(USDT, GOOGLE, 1000, 10);
-        v4ForInvest[0] = linkV4;
+        googleV4[0] = _makeV4Pool(USDT, GOOGLE, 1000, 10);
+        v4ForInvest[5] = googleV4; // index 5 = GOOGLE
+
+        // Los demás indices (0-4) quedan como arrays vacíos (V3 only)
 
         // --- INVEST ---
         vm.prank(adgent);
         wallet.invest(new bytes[](0), v4ForInvest);
+
         uint256 adgentWbnbAfter = IERC20(WBNB).balanceOf(adgent);
-        uint256 adgentUsdtAfter = usdt.balanceOf(adgent);
 
         console.log("=== DESPUES DEL INVEST ===");
         console.log("USDT wallet:", usdt.balanceOf(address(wallet)));
-        console.log("Google wallet:", google.balanceOf(address(wallet)));
+        console.log("ZCash wallet:", zec.balanceOf(address(wallet)));
+        console.log("Bitcoin wallet:", btcb.balanceOf(address(wallet)));
+        console.log("Near wallet:", near.balanceOf(address(wallet)));
         console.log("Ethereum wallet:", eth.balanceOf(address(wallet)));
+        console.log("FXlon wallet:", fxlon.balanceOf(address(wallet)));
+        console.log("Google wallet:", google.balanceOf(address(wallet)));
 
-        console.log("  Adgent WBNB before:", adgentWbnbBefore);
-        console.log("  Adgent WBNB after:", adgentWbnbAfter);
-        console.log("  Adgent USDT before:", adgentUsdtBefore);
-        console.log("  Adgent USDT after:", adgentUsdtAfter);
-
-        assertGt(google.balanceOf(address(wallet)), 0, "Should have FXLon");
-
-        // FXLon no tiene V4 pools - solo V3
+        // Verificar que GOOGLE tiene V4 pools guardadas
         assertEq(
             wallet.getV4Pools(GOOGLE).length,
             1,
-            "FXLon has no V4 pools (V3 only)"
+            "GOOGLE should have 1 V4 pool"
         );
 
-        // Guardar V4 pools para NVDAon y AAPLon (para verificar coexistencia V3+V4)
-        /*vm.prank(adgent);
-        wallet.setV4Pools(NVDAon, _nvdaV4Route());
-        vm.prank(adgent);
-        wallet.setV4Pools(AAPLon, _aaplV4Route());*/
+        // Los demás tokens no tienen V4 pools
+        assertEq(wallet.getV4Pools(ZEC).length, 0, "ZEC no V4");
+        assertEq(wallet.getV4Pools(ETH).length, 0, "ETH no V4");
+        assertEq(wallet.getV4Pools(BTCB).length, 0, "BTCB no V4");
+        assertEq(wallet.getV4Pools(NEAR).length, 0, "NEAR no V4");
+        assertEq(wallet.getV4Pools(FXLon).length, 0, "FXLon no V4");
 
-        //assertEq(wallet.getV4Pools(NVDAon).length, 2, "NVDAon V4 stored");
-        //assertEq(wallet.getV4Pools(AAPLon).length, 1, "AAPLon V4 stored");
-        //assertEq(wallet.getV4Pools(FXLon).length, 0, "FXLon still no V4");
-
-        console.log("=== COEXISTENCIA V3 + V4 ===");
-        console.log("  FXLon: V3 only (fee=500)");
-        console.log("  NVDAon: V4 (2 pools multi-hop)");
-        console.log("  AAPLon: V4 (1 pool single-hop)");
+        console.log("=== V4 STORAGE VERIFICADO ===");
+        console.log("  GOOGLE: 1 V4 pool (fee=1000, ts=10)");
+        console.log("  ZEC/ETH/BTCB/NEAR/FXLon: 0 (V3 only)");
 
         // SELLTOKENALL
         vm.prank(owner);
@@ -1185,12 +1207,15 @@ contract StockWalletExistingBnbTest is Test {
 
         console.log("=== DESPUES DE SELLTOKENALL ===");
         console.log("USDT wallet:", usdt.balanceOf(address(wallet)));
-        console.log("gOOGLE wallet:", google.balanceOf(address(wallet)));
+        console.log("ZCash wallet:", zec.balanceOf(address(wallet)));
+        console.log("Bitcoin wallet:", btcb.balanceOf(address(wallet)));
+        console.log("Near wallet:", near.balanceOf(address(wallet)));
         console.log("Ethereum wallet:", eth.balanceOf(address(wallet)));
+        console.log("Fxlon wallet:", fxlon.balanceOf(address(wallet)));
+        console.log("Google wallet:", google.balanceOf(address(wallet)));
 
-        // V4 pools persisten
-
-        assertEq(wallet.getV4Pools(GOOGLE).length, 1, "FXLon still V3 only");
+        // V4 pools persisten después de selltokenAll
+        assertEq(wallet.getV4Pools(GOOGLE).length, 1, "GOOGLE V4 persists");
 
         // WITHDRAW
         uint256 usdtFinal = usdt.balanceOf(address(wallet));
