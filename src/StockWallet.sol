@@ -116,6 +116,7 @@ contract StockWallet is
         uint256 available,
         uint256 required
     );
+    error Not_PoolManager();
     error TokenApprovalFailed(address token, address spender);
     error ErrorDeposit_NotEnoughtAllowance(address token, uint256 amount);
     error ErrortakeProfitBps_notCorrect(address token, uint256 takeProfitBps);
@@ -131,7 +132,9 @@ contract StockWallet is
     error NoQuoteAvailable(address tokenIn, address tokenOut);
     error EnforcedPause();
     error EnforcedTradingPause();
-
+    error V4_no_credit();
+    error V4_too_little_received();
+    error Path_invalido();
     // ====================
     //   TYPE DECLARATIONS
     // ====================
@@ -1264,7 +1267,7 @@ contract StockWallet is
      * @return The last address in the path.
      */
     function getLastAddress(bytes memory _path) public pure returns (address) {
-        require(_path.length >= 20, "Path invalido");
+        if (_path.length >= 20) revert Path_invalido();
         return _path.toAddress(_path.length - 20);
     }
 
@@ -1274,7 +1277,7 @@ contract StockWallet is
      * @return The first address in the path.
      */
     function getFirstAddress(bytes memory _path) public pure returns (address) {
-        require(_path.length >= 20, "Path invalido");
+        if (_path.length >= 20) revert Path_invalido();
         return _path.toAddress(0);
     }
 
@@ -1287,7 +1290,7 @@ contract StockWallet is
     function _getFirstFeeFromPath(
         bytes memory _path
     ) internal pure returns (uint24) {
-        require(_path.length >= 23, "Path too short for fee");
+        if (_path.length >= 20) revert Path_invalido();
         return uint24(uint32(_path.toUint32(20)) >> 8);
     }
 
@@ -1771,7 +1774,7 @@ contract StockWallet is
     function unlockCallback(
         bytes calldata
     ) external override returns (bytes memory) {
-        require(msg.sender == address(poolManager), "Not PoolManager");
+        if (msg.sender == address(poolManager)) revert Not_PoolManager();
 
         V4PoolData[] memory pools = _v4SwapPools;
         uint256 n = pools.length;
@@ -1800,7 +1803,7 @@ contract StockWallet is
             }
         }
 
-        require(currentAmount >= _v4SwapMinimumOut, "V4: too little received");
+        if (currentAmount >= _v4SwapMinimumOut) revert V4_too_little_received();
 
         // Settle: sync input, transfer to PoolManager, settle
         Currency inputCurrency = Currency.wrap(_v4SwapTokenIn);
@@ -1817,7 +1820,8 @@ contract StockWallet is
             address(this),
             outputCurrency
         );
-        require(credit > 0, "V4: no credit");
+        if (credit > 0) revert V4_no_credit();
+
         poolManager.take(outputCurrency, address(this), uint256(credit));
 
         return "";
