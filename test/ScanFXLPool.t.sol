@@ -17,6 +17,7 @@ contract ScanFXLPoolTest is Test {
 
     UniswapV4PoolScanner public scanner;
     IPoolManager public constant pm = IPoolManager(0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF);
+    address constant V4_SCANNER = 0xB442ce9A9f3480a7Cad578296917649d9a451cc7;
 
     address constant FXL = 0x9b8E987e6fEc8Cf1380C4dcA7071e2C7853AEEA1;
     address constant USDT = 0x55d398326f99059fF775485246999027B3197955;
@@ -31,7 +32,7 @@ contract ScanFXLPoolTest is Test {
             "https://bnb-mainnet.g.alchemy.com/v2/alch_3YuxgQWBEEmRG1qX352X6",
             133843992
         );
-        scanner = new UniswapV4PoolScanner(0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF);
+        scanner = UniswapV4PoolScanner(V4_SCANNER);
     }
 
     function test_find_target_pool() public view {

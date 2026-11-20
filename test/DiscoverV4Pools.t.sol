@@ -26,6 +26,7 @@ contract DiscoverV4PoolsTest is Test {
     UniswapV4PoolScanner public scanner;
 
     address constant POOL_MANAGER = 0x28e2Ea090877bF75740558f6BFB36A5ffeE9e9dF;
+    address constant V4_SCANNER = 0xB442ce9A9f3480a7Cad578296917649d9a451cc7;
     address constant UNIVERSAL_ROUTER =
         0x1906c1d672b88cD1B9aC7593301cA990F94Eae07;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
@@ -52,7 +53,7 @@ contract DiscoverV4PoolsTest is Test {
             "https://bnb-mainnet.g.alchemy.com/v2/alch_3YuxgQWBEEmRG1qX352X6",
             133660000
         );
-        scanner = new UniswapV4PoolScanner(POOL_MANAGER);
+        scanner = UniswapV4PoolScanner(V4_SCANNER);
         testUser = makeAddr("testUser");
         vm.deal(testUser, 100 ether);
     }

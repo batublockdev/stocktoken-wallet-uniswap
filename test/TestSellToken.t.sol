@@ -48,6 +48,9 @@ contract TestSellToken is Test {
     address constant UNIVERSAL_ROUTER_V4 =
         0x1906c1d672b88cD1B9aC7593301cA990F94Eae07;
 
+    // Scanner ya deployado en BSC (block 134522506)
+    address constant V4_SCANNER = 0xB442ce9A9f3480a7Cad578296917649d9a451cc7;
+
     // --- Tokens ---
     IERC20 private usdt = IERC20(USDT);
     IERC20 private google = IERC20(GOOGLE);
@@ -65,7 +68,7 @@ contract TestSellToken is Test {
             "https://bnb-mainnet.g.alchemy.com/v2/alch_3YuxgQWBEEmRG1qX352X6",
             FORK_BLOCK
         );
-        scanner = new UniswapV4PoolScanner(POOL_MANAGER);
+        scanner = UniswapV4PoolScanner(V4_SCANNER);
     }
 
     /**

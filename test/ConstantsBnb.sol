@@ -112,12 +112,14 @@ address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 address constant UNISWAP_V3_QUOTER = 0x78D78E420Da98ad378D7799bE8f4AF69033EB077;
 address constant UNISWAP_V3_SWAP_ROUTER_02 = 0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2;
 address constant UNISWAP_V3_NONFUNGIBLE_POSITION_MANAGER = 0x7b8A01B39D58278b5DE7e48c8449c9f4F5170613;
+address constant V4_SCANNER = 0xB442ce9A9f3480a7Cad578296917649d9a451cc7;
 
 // ============================================================
 //   UNISWAP V4 — INFRAESTRUCTURA EN BNB CHAIN
 // ============================================================
 
 address constant UNISWAP_V4_QUOTER = 0x95C086d7fE28AdD842ee220fef225a777474d781;
+address constant V4_POOL_SCANNER = 0xB442ce9A9f3480a7Cad578296917649d9a451cc7;
 
 // ============================================================
 //   NOTAS
